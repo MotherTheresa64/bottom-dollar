@@ -5,6 +5,11 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
+    "androidNavigationBar": {
+      "visible": "sticky-immersive",
+      "barStyle": "light-content",
+      "backgroundColor": "#090b0d"
+    },
     "android": {
       "package": "com.mt64labs.bottomdollar",
       "versionCode": 1
