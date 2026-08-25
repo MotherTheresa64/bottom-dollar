@@ -11,6 +11,7 @@ import {
   enrollEducation,
   getAge,
   getBusinessUpgradeCost,
+  getClockLabel,
   getDailyExpenses,
   getDayNumber,
   getNetWorth,
@@ -20,6 +21,7 @@ import {
   payDebt,
   performAction,
   recover,
+  restartLife,
   sellInvestments,
   transferToSavings,
   upgradeBusiness,
@@ -58,6 +60,7 @@ export default function App() {
 
   const age = getAge(state);
   const day = getDayNumber(state);
+  const clock = getClockLabel(state);
   const netWorth = getNetWorth(state);
   const passive = getPassiveIncomePerDay(state);
   const dailyExpenses = getDailyExpenses(state);
@@ -107,12 +110,6 @@ export default function App() {
         </View>
       ) : null}
 
-      <View style={styles.meters}>
-        <Meter label="ENERGY" value={state.energy} tone="energy" />
-        <Meter label="HEALTH" value={state.health} tone="health" />
-        <Meter label="HAPPINESS" value={state.happiness} tone="happy" />
-      </View>
-
       <Section title="CURRENT LIFE" subtitle="Your snapshot">
         <View style={styles.lifeGrid}>
           <LifeCard icon="⌂" label="Housing" value={state.housing} />
@@ -121,6 +118,12 @@ export default function App() {
           <LifeCard icon="▣" label="Businesses" value={`${businessCount} active`} />
         </View>
       </Section>
+
+      <View style={styles.rulesCard}>
+        <Text style={styles.rulesTitle}>SURVIVAL RULES</Text>
+        <Text style={styles.rulesText}>Health at 0 ends the life. Energy at 0 causes a 12-hour collapse plus health and happiness loss. Happiness at 0 causes burnout and costs a full day.</Text>
+        <Text style={styles.rulesText}>Work, recovery, education, and side jobs advance the clock. Housing costs and passive income are charged/earned as game time passes.</Text>
+      </View>
 
       <View style={styles.milestone}>
         <View style={styles.milestoneTop}><Text style={styles.milestoneLabel}>NEXT WEALTH MILESTONE</Text><Text style={styles.milestonePct}>{Math.round(milestoneProgress)}%</Text></View>
@@ -209,14 +212,39 @@ export default function App() {
 
   const pageContent = page === 'home' ? renderHome() : page === 'work' ? renderWork() : page === 'life' ? renderLife() : page === 'money' ? renderMoney() : renderEmpire();
 
+  if (state.dead) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <StatusBar style="light" backgroundColor="#090b0d" />
+        <View style={styles.deathScreen}>
+          <Text style={styles.deathKicker}>LIFE OVER</Text>
+          <Text style={styles.deathTitle}>You didn't make it.</Text>
+          <Text style={styles.deathReason}>{state.deathReason}</Text>
+          <View style={styles.deathStats}>
+            <Stat label="Age" value={age.toFixed(1)} />
+            <Stat label="Net worth" value={money(netWorth)} />
+            <Stat label="Best" value={money(state.bestNetWorth)} />
+          </View>
+          <Text style={styles.deathMeta}>Lives completed: {state.livesCompleted}</Text>
+          <TouchableOpacity style={styles.restartButton} onPress={() => { setState(restartLife(state)); setPage('home'); setNotice('A new life begins. Pay attention to the clock and your condition.'); }}>
+            <Text style={styles.restartText}>START A NEW LIFE</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar style="light" backgroundColor="#090b0d" />
       <View style={styles.shell}>
+        <View style={styles.topShell}>
+          <View style={styles.header}><View style={styles.headerCopy}><Text style={styles.brand}>BOTTOM DOLLAR</Text><Text style={styles.subBrand}>an MT64 Labs game</Text></View><View style={styles.dateBadge}><Text style={styles.dateMain}>AGE {age.toFixed(1)}</Text><Text style={styles.dateSub}>DAY {day} · {clock}</Text></View></View>
+          <VitalsHud cash={state.cash} energy={state.energy} health={state.health} happiness={state.happiness} />
+        </View>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          <View style={styles.header}><View style={styles.headerCopy}><Text style={styles.brand}>BOTTOM DOLLAR</Text><Text style={styles.subBrand}>an MT64 Labs game</Text></View><View style={styles.dateBadge}><Text style={styles.dateMain}>AGE {age.toFixed(1)}</Text><Text style={styles.dateSub}>DAY {day}</Text></View></View>
           {pageContent}
-          <Text style={styles.build}>BOTTOM DOLLAR · EARLY BUILD 0.4</Text>
+          <Text style={styles.build}>BOTTOM DOLLAR · EARLY BUILD 0.5</Text>
         </ScrollView>
         <View style={styles.nav}>
           <NavItem label="HOME" icon="⌂" active={page === 'home'} onPress={() => setPage('home')} />
@@ -230,27 +258,39 @@ export default function App() {
   );
 }
 
+function VitalsHud({ cash, energy, health, happiness }: { cash: number; energy: number; health: number; happiness: number }) {
+  return (
+    <View style={styles.vitalsHud}>
+      <View style={styles.cashHud}><Text style={styles.hudLabel}>CASH</Text><Text numberOfLines={1} adjustsFontSizeToFit style={styles.cashHudValue}>{money(cash)}</Text></View>
+      <HudVital label="EN" value={energy} tone="energy" />
+      <HudVital label="HP" value={health} tone="health" />
+      <HudVital label="HAP" value={happiness} tone="happy" />
+    </View>
+  );
+}
+function HudVital({ label, value, tone }: { label: string; value: number; tone: 'energy' | 'health' | 'happy' }) { const danger = value <= 25; return <View style={styles.hudVital}><View style={styles.hudVitalTop}><Text style={styles.hudLabel}>{label}</Text><Text style={[styles.hudValue, danger && styles.hudDanger]}>{Math.round(value)}</Text></View><View style={styles.hudTrack}><View style={[styles.hudFill, styles[`fill_${tone}`], { width: `${Math.max(0, Math.min(100, value))}%` }]} /></View></View>; }
 function PageIntro({ title, subtitle }: { title: string; subtitle: string }) { return <View style={styles.pageIntro}><Text style={styles.pageTitle}>{title}</Text><Text style={styles.pageSubtitle}>{subtitle}</Text></View>; }
 function NavItem({ label, icon, active, onPress }: { label: string; icon: string; active: boolean; onPress: () => void }) { return <TouchableOpacity onPress={onPress} style={styles.navItem}><Text style={[styles.navIcon, active && styles.navActive]}>{icon}</Text><Text style={[styles.navLabel, active && styles.navActive]}>{label}</Text>{active ? <View style={styles.navDot} /> : null}</TouchableOpacity>; }
 function Section({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) { return <View style={styles.section}><View style={styles.sectionHeading}><Text style={styles.sectionTitle}>{title}</Text>{subtitle ? <Text style={styles.sectionSubtitle}>{subtitle}</Text> : null}</View>{children}</View>; }
 function Stat({ label, value }: { label: string; value: string }) { return <View style={styles.stat}><Text style={styles.statLabel}>{label}</Text><Text numberOfLines={1} adjustsFontSizeToFit style={styles.statValue}>{value}</Text></View>; }
 function LifeCard({ icon, label, value }: { icon: string; label: string; value: string }) { return <View style={styles.lifeCard}><Text style={styles.lifeIcon}>{icon}</Text><View style={styles.lifeCopy}><Text style={styles.lifeLabel}>{label}</Text><Text numberOfLines={1} style={styles.lifeValue}>{value}</Text></View></View>; }
-function Meter({ label, value, tone }: { label: string; value: number; tone: 'energy' | 'health' | 'happy' }) { const warning = value <= 25; return <View style={styles.meterRow}><View style={styles.meterLabelWrap}><Text style={styles.meterLabel}>{label}</Text><Text style={[styles.meterValue, warning && styles.meterWarning]}>{percent(value)}</Text></View><View style={styles.track}><View style={[styles.fill, styles[`fill_${tone}`], { width: `${Math.max(0, Math.min(100, value))}%` }]} /></View></View>; }
 function GameButton({ title, detail, badge, disabled, disabledReason, onPress }: { title: string; detail: string; badge?: string; disabled?: boolean; disabledReason?: string; onPress: () => void }) { return <TouchableOpacity activeOpacity={0.72} disabled={disabled} onPress={onPress} style={[styles.button, disabled && styles.buttonDisabled]}><View style={styles.buttonTop}><Text style={[styles.buttonTitle, disabled && styles.textDisabled]}>{title}</Text>{badge ? <Text style={[styles.buttonBadge, disabled && styles.badgeDisabled]}>{badge}</Text> : null}</View><Text style={[styles.buttonDetail, disabled && styles.textDisabled]}>{detail}</Text>{disabledReason ? <Text style={styles.disabledReason}>{disabledReason}</Text> : null}</TouchableOpacity>; }
 function FinanceCard({ label, value, sub }: { label: string; value: string; sub: string }) { return <View style={styles.financeCard}><Text style={styles.financeLabel}>{label}</Text><Text style={styles.financeValue}>{value}</Text><Text style={styles.financeSub}>{sub}</Text></View>; }
 function MiniButton({ label, disabled, onPress }: { label: string; disabled?: boolean; onPress: () => void }) { return <TouchableOpacity disabled={disabled} onPress={onPress} style={[styles.miniButton, disabled && styles.buttonDisabled]}><Text style={[styles.miniText, disabled && styles.textDisabled]}>{label}</Text></TouchableOpacity>; }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#090b0d' }, shell: { flex: 1 }, content: { paddingHorizontal: 18, paddingTop: 12, paddingBottom: 34, gap: 20 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 }, headerCopy: { flex: 1 }, brand: { color: '#f6f8f9', fontSize: 25, fontWeight: '900', letterSpacing: 1.6 }, subBrand: { color: '#737d84', marginTop: 3, fontSize: 12 }, dateBadge: { backgroundColor: '#111518', borderWidth: 1, borderColor: '#242b30', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, alignItems: 'flex-end' }, dateMain: { color: '#d5dce0', fontSize: 11, fontWeight: '900' }, dateSub: { color: '#6f7a81', fontSize: 9, fontWeight: '800', marginTop: 2 },
+  safe: { flex: 1, backgroundColor: '#090b0d' }, shell: { flex: 1 }, topShell: { paddingHorizontal: 18, paddingTop: 10, paddingBottom: 10, gap: 9, backgroundColor: '#090b0d', borderBottomWidth: 1, borderBottomColor: '#1a2024' }, content: { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 34, gap: 20 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 }, headerCopy: { flex: 1 }, brand: { color: '#f6f8f9', fontSize: 23, fontWeight: '900', letterSpacing: 1.4 }, subBrand: { color: '#737d84', marginTop: 2, fontSize: 11 }, dateBadge: { backgroundColor: '#111518', borderWidth: 1, borderColor: '#242b30', borderRadius: 11, paddingHorizontal: 10, paddingVertical: 7, alignItems: 'flex-end' }, dateMain: { color: '#d5dce0', fontSize: 10, fontWeight: '900' }, dateSub: { color: '#6f7a81', fontSize: 8, fontWeight: '800', marginTop: 2 },
+  vitalsHud: { flexDirection: 'row', gap: 8, backgroundColor: '#0f1315', borderWidth: 1, borderColor: '#20272b', borderRadius: 13, padding: 9 }, cashHud: { width: 92, justifyContent: 'center', borderRightWidth: 1, borderRightColor: '#252c30', paddingRight: 8 }, cashHudValue: { color: '#f2f5f6', fontSize: 14, fontWeight: '900', marginTop: 3 }, hudVital: { flex: 1, minWidth: 0, justifyContent: 'center' }, hudVitalTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, hudLabel: { color: '#6f7980', fontSize: 8, fontWeight: '900', letterSpacing: 0.5 }, hudValue: { color: '#aeb7bc', fontSize: 9, fontWeight: '900' }, hudDanger: { color: '#ff9c75' }, hudTrack: { height: 4, backgroundColor: '#242a2e', borderRadius: 99, overflow: 'hidden', marginTop: 4 }, hudFill: { height: '100%', borderRadius: 99 }, fill_energy: { backgroundColor: '#d6ff45' }, fill_health: { backgroundColor: '#73e7a2' }, fill_happy: { backgroundColor: '#7cb5ff' },
   hero: { backgroundColor: '#121619', borderRadius: 22, padding: 20, borderWidth: 1, borderColor: '#242b30' }, heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, eyebrow: { color: '#828d94', fontSize: 11, fontWeight: '900', letterSpacing: 1.5 }, statusPill: { overflow: 'hidden', borderRadius: 99, paddingHorizontal: 9, paddingVertical: 4, fontSize: 9, fontWeight: '900' }, statusPositive: { color: '#d6ff45', backgroundColor: '#273113' }, statusNegative: { color: '#ff8c8c', backgroundColor: '#36191b' }, netWorth: { color: '#f7f9fa', fontSize: 44, fontWeight: '900', marginTop: 8, marginBottom: 20, letterSpacing: -1 }, row: { flexDirection: 'row', gap: 10 }, stat: { flex: 1, minWidth: 0 }, statLabel: { color: '#717c83', fontSize: 10, fontWeight: '700' }, statValue: { color: '#dce2e5', fontWeight: '800', fontSize: 14, marginTop: 4 },
   noticeCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#101416', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#1d2428' }, noticeDot: { width: 7, height: 7, borderRadius: 99, backgroundColor: '#d6ff45' }, noticeText: { color: '#aeb7bc', fontSize: 12, flex: 1, lineHeight: 17 }, eventCard: { backgroundColor: '#111518', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#273037' }, eventGood: { borderColor: '#294b34' }, eventBad: { borderColor: '#4a2c2c' }, eventTop: { flexDirection: 'row', justifyContent: 'space-between' }, eventLabel: { color: '#778289', fontSize: 9, fontWeight: '900' }, eventDay: { color: '#5f686e', fontSize: 9 }, eventTitle: { color: '#eef1f2', fontSize: 16, fontWeight: '900', marginTop: 8 }, eventBody: { color: '#89939a', fontSize: 11, lineHeight: 17, marginTop: 5 },
-  meters: { backgroundColor: '#101416', borderRadius: 18, padding: 16, gap: 13, borderWidth: 1, borderColor: '#1d2428' }, meterRow: { gap: 7 }, meterLabelWrap: { flexDirection: 'row', justifyContent: 'space-between' }, meterLabel: { color: '#929ca2', fontSize: 10, fontWeight: '900' }, meterValue: { color: '#b8c0c4', fontSize: 10, fontWeight: '800' }, meterWarning: { color: '#ff9c75' }, track: { height: 8, backgroundColor: '#23292d', borderRadius: 99, overflow: 'hidden' }, fill: { height: '100%', borderRadius: 99 }, fill_energy: { backgroundColor: '#d6ff45' }, fill_health: { backgroundColor: '#73e7a2' }, fill_happy: { backgroundColor: '#7cb5ff' },
   pageIntro: { marginTop: 2 }, pageTitle: { color: '#f5f7f8', fontSize: 27, fontWeight: '900', letterSpacing: 1.2 }, pageSubtitle: { color: '#6e7880', fontSize: 12, marginTop: 4, lineHeight: 18 }, section: { gap: 10 }, sectionHeading: { marginLeft: 2, marginBottom: 2 }, sectionTitle: { color: '#8a959c', fontSize: 12, fontWeight: '900', letterSpacing: 1.6 }, sectionSubtitle: { color: '#59636a', fontSize: 10, marginTop: 3 },
   lifeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 }, lifeCard: { width: '48.5%', minHeight: 68, backgroundColor: '#121619', borderColor: '#232a2f', borderWidth: 1, borderRadius: 14, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }, lifeIcon: { color: '#d6ff45', fontSize: 17, width: 20, textAlign: 'center' }, lifeCopy: { flex: 1 }, lifeLabel: { color: '#68737a', fontSize: 9, fontWeight: '800', textTransform: 'uppercase' }, lifeValue: { color: '#d9dfe2', fontSize: 12, fontWeight: '800', marginTop: 4 },
+  rulesCard: { backgroundColor: '#111417', borderWidth: 1, borderColor: '#30363a', borderRadius: 15, padding: 15 }, rulesTitle: { color: '#d6ff45', fontSize: 10, fontWeight: '900', letterSpacing: 1.2 }, rulesText: { color: '#8b959b', fontSize: 11, lineHeight: 17, marginTop: 7 },
   button: { backgroundColor: '#14191c', borderRadius: 15, borderWidth: 1, borderColor: '#293137', padding: 15 }, buttonDisabled: { opacity: 0.46, backgroundColor: '#101416' }, buttonTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }, buttonTitle: { color: '#f0f3f4', fontWeight: '800', fontSize: 15, flex: 1 }, buttonBadge: { color: '#d6ff45', backgroundColor: '#263011', overflow: 'hidden', borderRadius: 99, paddingHorizontal: 9, paddingVertical: 4, fontSize: 9, fontWeight: '900' }, badgeDisabled: { color: '#7e878c', backgroundColor: '#23282b' }, buttonDetail: { color: '#828c92', fontSize: 11.5, marginTop: 6, lineHeight: 17 }, textDisabled: { color: '#667077' }, disabledReason: { color: '#c88e73', fontSize: 10, fontWeight: '700', marginTop: 6 },
   financeSummary: { flexDirection: 'row', backgroundColor: '#121619', borderRadius: 16, borderWidth: 1, borderColor: '#242b30', padding: 15, gap: 8 }, financeCard: { backgroundColor: '#121619', borderRadius: 15, padding: 15, borderWidth: 1, borderColor: '#242b30' }, financeLabel: { color: '#748087', fontSize: 9, fontWeight: '900' }, financeValue: { color: '#f2f5f6', fontSize: 24, fontWeight: '900', marginTop: 4 }, financeSub: { color: '#6c777e', fontSize: 10, lineHeight: 15, marginTop: 5 }, quickRow: { flexDirection: 'row', gap: 8 }, miniButton: { flex: 1, backgroundColor: '#151b1f', borderWidth: 1, borderColor: '#2a3338', borderRadius: 11, paddingVertical: 11, paddingHorizontal: 8 }, miniText: { color: '#dce2e5', fontSize: 10, fontWeight: '800', textAlign: 'center' },
   passiveHero: { backgroundColor: '#172014', borderWidth: 1, borderColor: '#31401f', borderRadius: 18, padding: 18 }, passiveLabel: { color: '#a5bd62', fontSize: 10, fontWeight: '900', letterSpacing: 1.2 }, passiveValue: { color: '#d6ff45', fontSize: 32, fontWeight: '900', marginTop: 5 }, passiveSub: { color: '#81905b', fontSize: 10, marginTop: 6 }, achievementGrid: { gap: 8 }, achievement: { backgroundColor: '#101416', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#20272b' }, achievementUnlocked: { borderColor: '#3a4e20', backgroundColor: '#131a10' }, achievementName: { color: '#d6ff45', fontWeight: '900', fontSize: 12 }, achievementDesc: { color: '#6f7a81', fontSize: 10, marginTop: 4, lineHeight: 15 },
   milestone: { backgroundColor: '#d6ff45', borderRadius: 20, padding: 19 }, milestoneTop: { flexDirection: 'row', justifyContent: 'space-between' }, milestoneLabel: { color: '#161a12', fontSize: 10, fontWeight: '900' }, milestonePct: { color: '#34400c', fontSize: 12, fontWeight: '900' }, milestoneText: { color: '#161a12', fontWeight: '900', fontSize: 18, marginTop: 7 }, milestoneTrack: { backgroundColor: '#a9cb31', height: 7, borderRadius: 99, overflow: 'hidden', marginTop: 15 }, milestoneFill: { backgroundColor: '#151a11', height: '100%', borderRadius: 99 },
-  nav: { flexDirection: 'row', backgroundColor: '#0d1113', borderTopWidth: 1, borderTopColor: '#20272b', paddingTop: 8, paddingBottom: 8, paddingHorizontal: 5 }, navItem: { flex: 1, alignItems: 'center', minHeight: 48, justifyContent: 'center' }, navIcon: { color: '#596269', fontSize: 16, fontWeight: '900' }, navLabel: { color: '#596269', fontSize: 8, fontWeight: '900', marginTop: 3, letterSpacing: 0.6 }, navActive: { color: '#d6ff45' }, navDot: { width: 4, height: 4, borderRadius: 99, backgroundColor: '#d6ff45', marginTop: 4 }, build: { color: '#3f474c', textAlign: 'center', fontSize: 9, fontWeight: '800', letterSpacing: 1.2, marginTop: 2 }
+  nav: { flexDirection: 'row', backgroundColor: '#0d1113', borderTopWidth: 1, borderTopColor: '#20272b', paddingTop: 8, paddingBottom: 14, paddingHorizontal: 5 }, navItem: { flex: 1, alignItems: 'center', minHeight: 48, justifyContent: 'center' }, navIcon: { color: '#596269', fontSize: 16, fontWeight: '900' }, navLabel: { color: '#596269', fontSize: 8, fontWeight: '900', marginTop: 3, letterSpacing: 0.6 }, navActive: { color: '#d6ff45' }, navDot: { width: 4, height: 4, borderRadius: 99, backgroundColor: '#d6ff45', marginTop: 4 }, build: { color: '#3f474c', textAlign: 'center', fontSize: 9, fontWeight: '800', letterSpacing: 1.2, marginTop: 2 },
+  deathScreen: { flex: 1, justifyContent: 'center', padding: 28 }, deathKicker: { color: '#ff8c8c', fontSize: 11, fontWeight: '900', letterSpacing: 1.8 }, deathTitle: { color: '#f7f8f8', fontSize: 34, fontWeight: '900', marginTop: 8 }, deathReason: { color: '#8f999f', fontSize: 14, lineHeight: 21, marginTop: 10 }, deathStats: { flexDirection: 'row', gap: 12, backgroundColor: '#121619', borderWidth: 1, borderColor: '#2b3236', borderRadius: 16, padding: 16, marginTop: 24 }, deathMeta: { color: '#707a81', fontSize: 11, marginTop: 12 }, restartButton: { backgroundColor: '#d6ff45', borderRadius: 14, paddingVertical: 15, alignItems: 'center', marginTop: 24 }, restartText: { color: '#141810', fontSize: 13, fontWeight: '900', letterSpacing: 0.8 }
 });
