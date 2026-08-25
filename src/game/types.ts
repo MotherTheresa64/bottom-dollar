@@ -20,6 +20,10 @@ export type LifeState = {
   history: LifeEvent[];
   createdAt: number;
   lastSavedAt: number;
+  dead: boolean;
+  deathReason: string | null;
+  livesCompleted: number;
+  bestNetWorth: number;
 };
 
 export type LifeEvent = {
