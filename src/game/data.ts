@@ -59,11 +59,18 @@ export const education: EducationDefinition[] = [
   { id: 'Trade Certificate', label: 'Trade Certificate', cost: 900, days: 120, description: 'Unlocks skilled trade work with much better pay.', requires: s => s.education === 'GED', requirementText: 'Requires a GED' }
 ];
 
+// Business income is deliberately expressed per in-game day. The early ladder gives
+// players their first taste of automation quickly, while later businesses require
+// meaningful career/assets progress instead of simply buying the next button.
 export const businesses: BusinessDefinition[] = [
+  { id: 'vending', label: 'Vending Route', description: 'Buy a used machine and keep it stocked. Small money, but it earns without a shift.', baseCost: 400, dailyIncome: 12, maxLevel: 5, requires: s => s.inventory.includes('phone'), requirementText: 'Requires a phone' },
   { id: 'lawn', label: 'Lawn Care Hustle', description: 'A tiny local service business you can grow one customer at a time.', baseCost: 750, dailyIncome: 24, maxLevel: 5, requires: s => s.inventory.includes('phone') && s.inventory.includes('bike'), requirementText: 'Requires a phone and bicycle' },
   { id: 'cleaning', label: 'Cleaning Company', description: 'Hire help and turn odd jobs into recurring contracts.', baseCost: 3500, dailyIncome: 110, maxLevel: 5, requires: s => s.inventory.includes('phone') && s.housing !== 'Homeless' && s.housing !== 'Shelter', requirementText: 'Requires phone and stable housing' },
-  { id: 'online', label: 'Online Store', description: 'Build a small digital storefront that earns while you are away.', baseCost: 6000, dailyIncome: 190, maxLevel: 5, requires: s => s.inventory.includes('laptop') && s.inventory.includes('phone'), requirementText: 'Requires a laptop and phone' },
-  { id: 'contracting', label: 'Electrical Contracting', description: 'Turn your trade experience into a real company.', baseCost: 18000, dailyIncome: 620, maxLevel: 5, requires: s => s.education === 'Trade Certificate' && (s.stats.shifts ?? 0) >= 35 && s.inventory.includes('car'), requirementText: 'Requires trade certificate, 35 shifts, and a car' }
+  { id: 'online', label: 'Online Store', description: 'Build a small digital storefront that can sell while you are away.', baseCost: 6000, dailyIncome: 190, maxLevel: 5, requires: s => s.inventory.includes('laptop') && s.inventory.includes('phone'), requirementText: 'Requires a laptop and phone' },
+  { id: 'laundromat', label: 'Neighborhood Laundromat', description: 'A boring business in the best possible way: recurring customers and steady cash flow.', baseCost: 12000, dailyIncome: 360, maxLevel: 5, requires: s => s.housing === 'Apartment' || s.housing === 'House', requirementText: 'Requires stable apartment or house living' },
+  { id: 'contracting', label: 'Electrical Contracting', description: 'Turn your trade experience into a real company.', baseCost: 18000, dailyIncome: 620, maxLevel: 5, requires: s => s.education === 'Trade Certificate' && (s.stats.shifts ?? 0) >= 35 && s.inventory.includes('car'), requirementText: 'Requires trade certificate, 35 shifts, and a car' },
+  { id: 'rental', label: 'Rental Property', description: 'Buy a modest rental and collect income after upkeep and vacancy are accounted for.', baseCost: 45000, dailyIncome: 1050, maxLevel: 5, requires: s => s.housing === 'House' && s.inventory.includes('car'), requirementText: 'Requires a house and car' },
+  { id: 'software', label: 'Micro SaaS Company', description: 'Turn your laptop into a subscription software business with recurring revenue.', baseCost: 75000, dailyIncome: 1900, maxLevel: 5, requires: s => s.inventory.includes('laptop') && s.education !== 'None' && (s.stats.shifts ?? 0) >= 25, requirementText: 'Requires GED, laptop, and 25 shifts of experience' }
 ];
 
 export const achievements: AchievementDefinition[] = [
@@ -74,5 +81,8 @@ export const achievements: AchievementDefinition[] = [
   { id: 'ten-k', label: 'Five Digits', description: 'Reach $10,000 net worth.', test: s => (s.cash + s.savings + s.investments - s.debt) >= 10000 },
   { id: 'business-owner', label: 'Owner, Not Employee', description: 'Start your first business.', test: s => Object.values(s.businesses).some(level => level > 0) },
   { id: 'investor', label: 'Money Working for You', description: 'Build at least $1,000 in investments.', test: s => s.investments >= 1000 },
-  { id: 'hundred-k', label: 'Six Digits', description: 'Reach $100,000 net worth.', test: s => (s.cash + s.savings + s.investments - s.debt) >= 100000 }
+  { id: 'passive-100', label: 'The Machine Starts', description: 'Build at least $100/day of business income.', test: s => businesses.reduce((total, b) => total + b.dailyIncome * (s.businesses[b.id] ?? 0) * (1 + Math.max(0, (s.businesses[b.id] ?? 0) - 1) * 0.12), 0) >= 100 },
+  { id: 'hundred-k', label: 'Six Digits', description: 'Reach $100,000 net worth.', test: s => (s.cash + s.savings + s.investments - s.debt) >= 100000 },
+  { id: 'passive-1k', label: 'Money Never Sleeps', description: 'Build at least $1,000/day of business income.', test: s => businesses.reduce((total, b) => total + b.dailyIncome * (s.businesses[b.id] ?? 0) * (1 + Math.max(0, (s.businesses[b.id] ?? 0) - 1) * 0.12), 0) >= 1000 },
+  { id: 'millionaire', label: 'Seven Digits', description: 'Reach $1,000,000 net worth.', test: s => (s.cash + s.savings + s.investments - s.debt) >= 1000000 }
 ];
