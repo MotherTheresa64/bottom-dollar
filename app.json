@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "Bottom Dollar",
+    "slug": "bottom-dollar",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "android": {
+      "package": "com.mt64labs.bottomdollar",
+      "versionCode": 1
+    },
+    "ios": {
+      "bundleIdentifier": "com.mt64labs.bottomdollar",
+      "buildNumber": "1"
+    },
+    "extra": {
+      "studio": "MT64 Labs"
+    }
+  }
+}
