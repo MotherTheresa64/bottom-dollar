@@ -22,10 +22,14 @@ export const createNewLife = (): LifeState => ({
   inventory: [],
   businesses: {},
   achievements: [],
-  stats: { taps: 0, earned: 0, passiveEarned: 0, spent: 0, daysLived: 0, shifts: 0, rested: 0, events: 0 },
+  stats: { taps: 0, earned: 0, passiveEarned: 0, spent: 0, daysLived: 0, shifts: 0, rested: 0, events: 0, collapses: 0, burnouts: 0 },
   history: [{ id: 'start', title: 'A New Life', body: 'You start with nothing but time.', day: 0, tone: 'neutral' }],
   createdAt: Date.now(),
-  lastSavedAt: Date.now()
+  lastSavedAt: Date.now(),
+  dead: false,
+  deathReason: null,
+  livesCompleted: 0,
+  bestNetWorth: 0
 });
 
 export const normalizeState = (state: Partial<LifeState> | null | undefined): LifeState => {
@@ -43,9 +47,23 @@ export const normalizeState = (state: Partial<LifeState> | null | undefined): Li
     businesses: state.businesses && typeof state.businesses === 'object' ? state.businesses : {},
     achievements: Array.isArray(state.achievements) ? state.achievements : [],
     history: Array.isArray(state.history) ? state.history : fresh.history,
-    stats: { ...fresh.stats, ...(state.stats ?? {}) }
+    stats: { ...fresh.stats, ...(state.stats ?? {}) },
+    dead: Boolean(state.dead),
+    deathReason: state.deathReason ?? null,
+    livesCompleted: Math.max(0, state.livesCompleted ?? 0),
+    bestNetWorth: Math.max(0, state.bestNetWorth ?? 0)
   };
-  return syncAchievements(merged);
+  return finalizeState(merged);
+};
+
+export const restartLife = (previous: LifeState): LifeState => {
+  const fresh = createNewLife();
+  return {
+    ...fresh,
+    livesCompleted: previous.livesCompleted + 1,
+    bestNetWorth: Math.max(previous.bestNetWorth, getNetWorth(previous)),
+    stats: { ...fresh.stats, totalDeaths: (previous.stats.totalDeaths ?? 0) + 1 }
+  };
 };
 
 export const getPassiveIncomePerDay = (state: LifeState) => businesses.reduce((total, business) => {
@@ -62,8 +80,78 @@ const pushEvent = (state: LifeState, event: LifeEvent): LifeState => ({
   stats: { ...state.stats, events: (state.stats.events ?? 0) + 1 }
 });
 
+const applyCriticalCondition = (input: LifeState): LifeState => {
+  if (input.dead) return input;
+  let state = input;
+
+  if (state.health <= 0) {
+    return {
+      ...state,
+      health: 0,
+      dead: true,
+      deathReason: 'Your health reached zero. This life is over.',
+      bestNetWorth: Math.max(state.bestNetWorth, getNetWorth(state))
+    };
+  }
+
+  if (state.energy <= 0) {
+    const collapseDays = 0.5;
+    state = pushEvent({
+      ...state,
+      ageDays: state.ageDays + collapseDays,
+      energy: 35,
+      health: clamp(state.health - 12),
+      happiness: clamp(state.happiness - 8),
+      stats: {
+        ...state.stats,
+        daysLived: (state.stats.daysLived ?? 0) + collapseDays,
+        collapses: (state.stats.collapses ?? 0) + 1
+      }
+    }, {
+      id: `collapse-${Date.now()}`,
+      title: 'You Collapsed',
+      body: 'You pushed yourself too far. You lost 12 hours, health, and happiness before recovering enough to continue.',
+      day: getDayNumber(state),
+      tone: 'bad'
+    });
+  }
+
+  if (state.happiness <= 0 && !state.dead) {
+    state = pushEvent({
+      ...state,
+      ageDays: state.ageDays + 1,
+      happiness: 15,
+      energy: Math.max(15, state.energy - 20),
+      health: clamp(state.health - 6),
+      stats: {
+        ...state.stats,
+        daysLived: (state.stats.daysLived ?? 0) + 1,
+        burnouts: (state.stats.burnouts ?? 0) + 1
+      }
+    }, {
+      id: `burnout-${Date.now()}`,
+      title: 'Burnout',
+      body: 'You hit a breaking point. A full day disappeared and your health and energy took a hit.',
+      day: getDayNumber(state),
+      tone: 'bad'
+    });
+  }
+
+  if (state.health <= 0) {
+    return {
+      ...state,
+      health: 0,
+      dead: true,
+      deathReason: 'Your health reached zero. This life is over.',
+      bestNetWorth: Math.max(state.bestNetWorth, getNetWorth(state))
+    };
+  }
+
+  return state;
+};
+
 const maybeRandomEvent = (state: LifeState, elapsedDays: number): LifeState => {
-  if (elapsedDays <= 0) return state;
+  if (elapsedDays <= 0 || state.dead) return state;
   const chance = Math.min(0.35, elapsedDays * 0.07);
   if (Math.random() > chance) return state;
 
@@ -110,7 +198,16 @@ export const syncAchievements = (state: LifeState): LifeState => {
   return unlocked.length === state.achievements.length ? state : { ...state, achievements: unlocked };
 };
 
+const finalizeState = (state: LifeState): LifeState => {
+  const conditioned = applyCriticalCondition(state);
+  return syncAchievements({
+    ...conditioned,
+    bestNetWorth: Math.max(conditioned.bestNetWorth, getNetWorth(conditioned))
+  });
+};
+
 export const advanceTime = (state: LifeState, minutes: number): LifeState => {
+  if (state.dead) return state;
   const days = minutes / MINUTES_PER_DAY;
   let health = state.health;
   let happiness = state.happiness;
@@ -148,15 +245,15 @@ export const advanceTime = (state: LifeState, minutes: number): LifeState => {
     }
   };
   next = maybeRandomEvent(next, days);
-  return syncAchievements(next);
+  return finalizeState(next);
 };
 
 export const performAction = (state: LifeState, actionId: string): LifeState => {
   const action = actions.find(a => a.id === actionId);
-  if (!action || state.energy < action.energyCost || (action.requires && !action.requires(state))) return state;
+  if (state.dead || !action || state.energy < action.energyCost || (action.requires && !action.requires(state))) return state;
   const earned = roundMoney(action.minCash + Math.random() * (action.maxCash - action.minCash));
   const timed = advanceTime(state, action.minutes);
-  return syncAchievements({
+  return finalizeState({
     ...timed,
     cash: roundMoney(timed.cash + earned),
     energy: clamp(timed.energy - action.energyCost),
@@ -167,10 +264,10 @@ export const performAction = (state: LifeState, actionId: string): LifeState => 
 
 export const workShift = (state: LifeState, jobId: string): LifeState => {
   const job = jobs.find(j => j.id === jobId);
-  if (!job || state.energy < job.energyCost || (job.requires && !job.requires(state))) return state;
+  if (state.dead || !job || state.energy < job.energyCost || (job.requires && !job.requires(state))) return state;
   const pay = roundMoney(job.hourlyPay * job.shiftHours);
   const timed = advanceTime(state, job.shiftHours * 60);
-  return syncAchievements({
+  return finalizeState({
     ...timed,
     currentJobId: job.id,
     cash: roundMoney(timed.cash + pay),
@@ -182,13 +279,13 @@ export const workShift = (state: LifeState, jobId: string): LifeState => {
 
 export const recover = (state: LifeState, recoveryId: string): LifeState => {
   const option = recovery.find(r => r.id === recoveryId);
-  if (!option || state.cash < option.cost || (option.requires && !option.requires(state))) return state;
+  if (state.dead || !option || state.cash < option.cost || (option.requires && !option.requires(state))) return state;
   const timed = advanceTime(state, option.minutes);
   const home = housing.find(h => h.id === state.housing);
   const isSleep = recoveryId === 'sleep' || recoveryId === 'bench-sleep';
   const energyBonus = isSleep ? (home?.energyBonus ?? 0) : 0;
   const healthBonus = isSleep ? (home?.healthBonus ?? 0) : 0;
-  return syncAchievements({
+  return finalizeState({
     ...timed,
     cash: roundMoney(Math.max(0, timed.cash - option.cost)),
     energy: clamp(timed.energy + option.energyGain + energyBonus),
@@ -199,8 +296,8 @@ export const recover = (state: LifeState, recoveryId: string): LifeState => {
 };
 
 export const buyItem = (state: LifeState, id: string, cost: number): LifeState => {
-  if (state.cash < cost || state.inventory.includes(id)) return state;
-  return syncAchievements({
+  if (state.dead || state.cash < cost || state.inventory.includes(id)) return state;
+  return finalizeState({
     ...state,
     cash: roundMoney(state.cash - cost),
     inventory: [...state.inventory, id],
@@ -211,8 +308,8 @@ export const buyItem = (state: LifeState, id: string, cost: number): LifeState =
 
 export const buyHousing = (state: LifeState, id: HousingType): LifeState => {
   const option = housing.find(h => h.id === id);
-  if (!option || state.cash < option.cost || (option.requires && !option.requires(state))) return state;
-  return syncAchievements({
+  if (state.dead || !option || state.cash < option.cost || (option.requires && !option.requires(state))) return state;
+  return finalizeState({
     ...state,
     cash: roundMoney(state.cash - option.cost),
     housing: option.id,
@@ -224,40 +321,40 @@ export const buyHousing = (state: LifeState, id: HousingType): LifeState => {
 
 export const enrollEducation = (state: LifeState, id: EducationType): LifeState => {
   const option = education.find(e => e.id === id);
-  if (!option || state.cash < option.cost || (option.requires && !option.requires(state))) return state;
+  if (state.dead || !option || state.cash < option.cost || (option.requires && !option.requires(state))) return state;
   const paid = { ...state, cash: roundMoney(state.cash - option.cost), stats: { ...state.stats, spent: (state.stats.spent ?? 0) + option.cost } };
   const timed = advanceTime(paid, option.days * MINUTES_PER_DAY);
-  return syncAchievements({ ...timed, education: option.id, energy: clamp(timed.energy - 10), happiness: clamp(timed.happiness + 5) });
+  return finalizeState({ ...timed, education: option.id, energy: clamp(timed.energy - 10), happiness: clamp(timed.happiness + 5) });
 };
 
 export const transferToSavings = (state: LifeState, amount: number): LifeState => {
   const actual = Math.min(state.cash, Math.max(0, amount));
-  if (actual <= 0) return state;
-  return syncAchievements({ ...state, cash: roundMoney(state.cash - actual), savings: roundMoney(state.savings + actual) });
+  if (state.dead || actual <= 0) return state;
+  return finalizeState({ ...state, cash: roundMoney(state.cash - actual), savings: roundMoney(state.savings + actual) });
 };
 
 export const withdrawSavings = (state: LifeState, amount: number): LifeState => {
   const actual = Math.min(state.savings, Math.max(0, amount));
-  if (actual <= 0) return state;
-  return { ...state, savings: roundMoney(state.savings - actual), cash: roundMoney(state.cash + actual) };
+  if (state.dead || actual <= 0) return state;
+  return finalizeState({ ...state, savings: roundMoney(state.savings - actual), cash: roundMoney(state.cash + actual) });
 };
 
 export const investCash = (state: LifeState, amount: number): LifeState => {
   const actual = Math.min(state.cash, Math.max(0, amount));
-  if (actual <= 0) return state;
-  return syncAchievements({ ...state, cash: roundMoney(state.cash - actual), investments: roundMoney(state.investments + actual) });
+  if (state.dead || actual <= 0) return state;
+  return finalizeState({ ...state, cash: roundMoney(state.cash - actual), investments: roundMoney(state.investments + actual) });
 };
 
 export const sellInvestments = (state: LifeState, amount: number): LifeState => {
   const actual = Math.min(state.investments, Math.max(0, amount));
-  if (actual <= 0) return state;
-  return { ...state, investments: roundMoney(state.investments - actual), cash: roundMoney(state.cash + actual) };
+  if (state.dead || actual <= 0) return state;
+  return finalizeState({ ...state, investments: roundMoney(state.investments - actual), cash: roundMoney(state.cash + actual) });
 };
 
 export const payDebt = (state: LifeState, amount: number): LifeState => {
   const actual = Math.min(state.cash, state.debt, Math.max(0, amount));
-  if (actual <= 0) return state;
-  return { ...state, cash: roundMoney(state.cash - actual), debt: roundMoney(state.debt - actual) };
+  if (state.dead || actual <= 0) return state;
+  return finalizeState({ ...state, cash: roundMoney(state.cash - actual), debt: roundMoney(state.debt - actual) });
 };
 
 export const getBusinessUpgradeCost = (state: LifeState, businessId: string) => {
@@ -269,11 +366,11 @@ export const getBusinessUpgradeCost = (state: LifeState, businessId: string) => 
 
 export const upgradeBusiness = (state: LifeState, businessId: string): LifeState => {
   const business = businesses.find(b => b.id === businessId);
-  if (!business) return state;
+  if (!business || state.dead) return state;
   const level = state.businesses[businessId] ?? 0;
   const cost = getBusinessUpgradeCost(state, businessId);
   if (level >= business.maxLevel || state.cash < cost || (business.requires && !business.requires(state))) return state;
-  return syncAchievements({
+  return finalizeState({
     ...state,
     cash: roundMoney(state.cash - cost),
     businesses: { ...state.businesses, [businessId]: level + 1 },
@@ -285,3 +382,13 @@ export const upgradeBusiness = (state: LifeState, businessId: string): LifeState
 export const getAge = (state: LifeState) => state.ageDays / DAYS_PER_YEAR;
 export const getNetWorth = (state: LifeState) => state.cash + state.savings + state.investments - state.debt;
 export const getDayNumber = (state: LifeState) => Math.max(1, Math.floor(state.ageDays - 18 * DAYS_PER_YEAR) + 1);
+export const getClockLabel = (state: LifeState) => {
+  const elapsed = state.ageDays - 18 * DAYS_PER_YEAR;
+  const dayFraction = ((elapsed % 1) + 1) % 1;
+  const totalMinutes = Math.floor(dayFraction * MINUTES_PER_DAY);
+  const hour24 = Math.floor(totalMinutes / 60);
+  const minute = totalMinutes % 60;
+  const suffix = hour24 >= 12 ? 'PM' : 'AM';
+  const hour12 = hour24 % 12 || 12;
+  return `${hour12}:${minute.toString().padStart(2, '0')} ${suffix}`;
+};
