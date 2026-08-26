@@ -10,12 +10,16 @@ const productionRewardedId =
   (Constants.expoConfig?.extra?.admobRewardedAdUnitId as string | undefined) ??
   'ca-app-pub-2371910035366454/4232226723';
 
-const rewardedAdUnitId = __DEV__ ? TestIds.REWARDED : productionRewardedId;
+// EAS Updates are production JS bundles even when they run inside a development
+// client, so __DEV__ is not a reliable way to choose test inventory here.
+// Keep live ads explicitly opt-in until we're ready for Play Store release.
+const useLiveAds = Constants.expoConfig?.extra?.admobUseLiveAds === true;
+const rewardedAdUnitId = useLiveAds ? productionRewardedId : TestIds.REWARDED;
 
 let initialized = false;
 let rewarded: RewardedAd | null = null;
 let loaded = false;
-let loading = false;
+let loadPromise: Promise<boolean> | null = null;
 
 async function ensureInitialized() {
   if (initialized) return;
@@ -26,32 +30,56 @@ async function ensureInitialized() {
 function createRewarded() {
   rewarded = RewardedAd.createForAdRequest(rewardedAdUnitId);
   loaded = false;
-  loading = false;
   return rewarded;
 }
 
-export async function preloadRewardedAd() {
+async function loadRewardedAd(): Promise<boolean> {
   await ensureInitialized();
+
+  if (loaded && rewarded) return true;
+  if (loadPromise) return loadPromise;
+
   const ad = rewarded ?? createRewarded();
-  if (loaded || loading) return;
 
-  loading = true;
+  loadPromise = new Promise<boolean>(resolve => {
+    let settled = false;
 
-  const unsubscribeLoaded = ad.addAdEventListener(RewardedAdEventType.LOADED, () => {
-    loaded = true;
-    loading = false;
-    unsubscribeLoaded();
-    unsubscribeError();
+    const cleanup = () => {
+      clearTimeout(timeout);
+      unsubscribeLoaded();
+      unsubscribeError();
+    };
+
+    const finish = (success: boolean) => {
+      if (settled) return;
+      settled = true;
+      loaded = success;
+      if (!success) rewarded = null;
+      cleanup();
+      resolve(success);
+    };
+
+    const unsubscribeLoaded = ad.addAdEventListener(
+      RewardedAdEventType.LOADED,
+      () => finish(true)
+    );
+
+    const unsubscribeError = ad.addAdEventListener(
+      AdEventType.ERROR,
+      () => finish(false)
+    );
+
+    const timeout = setTimeout(() => finish(false), 12000);
+    ad.load();
   });
 
-  const unsubscribeError = ad.addAdEventListener(AdEventType.ERROR, () => {
-    loaded = false;
-    loading = false;
-    unsubscribeLoaded();
-    unsubscribeError();
-  });
+  const result = await loadPromise;
+  loadPromise = null;
+  return result;
+}
 
-  ad.load();
+export async function preloadRewardedAd() {
+  await loadRewardedAd();
 }
 
 export function isRewardedAdReady() {
@@ -59,32 +87,14 @@ export function isRewardedAdReady() {
 }
 
 export async function showRewardedAd(): Promise<boolean> {
-  await ensureInitialized();
-  const ad = rewarded ?? createRewarded();
+  const isReady = await loadRewardedAd();
+  if (!isReady || !rewarded) return false;
 
-  if (!loaded) {
-    await preloadRewardedAd();
-    return false;
-  }
+  const ad = rewarded;
 
   return new Promise(resolve => {
     let earned = false;
     let settled = false;
-
-    const unsubscribeEarned = ad.addAdEventListener(
-      RewardedAdEventType.EARNED_REWARD,
-      () => {
-        earned = true;
-      }
-    );
-
-    const unsubscribeClosed = ad.addAdEventListener(AdEventType.CLOSED, () => {
-      finish(earned);
-    });
-
-    const unsubscribeError = ad.addAdEventListener(AdEventType.ERROR, () => {
-      finish(false);
-    });
 
     const cleanup = () => {
       unsubscribeEarned();
@@ -102,9 +112,26 @@ export async function showRewardedAd(): Promise<boolean> {
       resolve(value);
     };
 
+    const unsubscribeEarned = ad.addAdEventListener(
+      RewardedAdEventType.EARNED_REWARD,
+      () => {
+        earned = true;
+      }
+    );
+
+    const unsubscribeClosed = ad.addAdEventListener(
+      AdEventType.CLOSED,
+      () => finish(earned)
+    );
+
+    const unsubscribeError = ad.addAdEventListener(
+      AdEventType.ERROR,
+      () => finish(false)
+    );
+
     loaded = false;
     ad.show().catch(() => finish(false));
   });
 }
 
-export const rewardedAdUsesTestInventory = __DEV__;
+export const rewardedAdUsesTestInventory = !useLiveAds;
