@@ -23,7 +23,7 @@
     "android": {
       "package": "com.mt64labs.bottomdollar",
       "versionCode": 2,
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": false
     },
     "ios": {
       "bundleIdentifier": "com.mt64labs.bottomdollar",
@@ -44,6 +44,18 @@
       "url": "https://u.expo.dev/36a764ef-3d4b-440f-b1ba-e7f2d3938881"
     },
     "plugins": [
+      [
+        "expo-navigation-bar",
+        {
+          "backgroundColor": "#07090b",
+          "barStyle": "light",
+          "borderColor": "#07090b",
+          "visibility": "hidden",
+          "behavior": "overlay-swipe",
+          "position": "absolute",
+          "legacyVisible": "sticky-immersive"
+        }
+      ],
       [
         "react-native-google-mobile-ads",
         {
