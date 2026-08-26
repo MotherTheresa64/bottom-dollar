@@ -1,0 +1,3 @@
+Bottom Dollar 1.0.0 production release trigger.
+
+This release includes the polished game UI, immersive Android navigation, rewarded AdMob boosts, production/test ad separation, and launch-ready build configuration.
