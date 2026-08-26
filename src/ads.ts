@@ -24,9 +24,7 @@ async function ensureInitialized() {
 }
 
 function createRewarded() {
-  rewarded = RewardedAd.createForAdRequest(rewardedAdUnitId, {
-    requestNonPersonalizedAdsOnly: false
-  });
+  rewarded = RewardedAd.createForAdRequest(rewardedAdUnitId);
   loaded = false;
   loading = false;
   return rewarded;
@@ -71,6 +69,7 @@ export async function showRewardedAd(): Promise<boolean> {
 
   return new Promise(resolve => {
     let earned = false;
+    let settled = false;
 
     const unsubscribeEarned = ad.addAdEventListener(
       RewardedAdEventType.EARNED_REWARD,
@@ -80,19 +79,11 @@ export async function showRewardedAd(): Promise<boolean> {
     );
 
     const unsubscribeClosed = ad.addAdEventListener(AdEventType.CLOSED, () => {
-      cleanup();
-      rewarded = null;
-      loaded = false;
-      preloadRewardedAd().catch(() => undefined);
-      resolve(earned);
+      finish(earned);
     });
 
     const unsubscribeError = ad.addAdEventListener(AdEventType.ERROR, () => {
-      cleanup();
-      rewarded = null;
-      loaded = false;
-      preloadRewardedAd().catch(() => undefined);
-      resolve(false);
+      finish(false);
     });
 
     const cleanup = () => {
@@ -101,13 +92,18 @@ export async function showRewardedAd(): Promise<boolean> {
       unsubscribeError();
     };
 
-    loaded = false;
-    ad.show().catch(() => {
+    const finish = (value: boolean) => {
+      if (settled) return;
+      settled = true;
       cleanup();
       rewarded = null;
       loaded = false;
-      resolve(false);
-    });
+      preloadRewardedAd().catch(() => undefined);
+      resolve(value);
+    };
+
+    loaded = false;
+    ad.show().catch(() => finish(false));
   });
 }
 
