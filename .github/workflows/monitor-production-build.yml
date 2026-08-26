@@ -31,7 +31,7 @@ jobs:
         run: |
           BUILD_ID="39a2dc84-8a68-4c7a-a1cc-8271f56ecc61"
           for attempt in {1..40}; do
-            JSON="$(eas build:view "$BUILD_ID" --json --non-interactive)"
+            JSON="$(eas build:view "$BUILD_ID" --json)"
             STATUS="$(printf '%s' "$JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).status))")"
             echo "Production build status: $STATUS"
             if [ "$STATUS" = "FINISHED" ]; then
