@@ -36,8 +36,8 @@ async function loadRewardedAd(): Promise<boolean> {
   const ad = rewarded ?? createRewarded();
   loadPromise = new Promise<boolean>(resolve => {
     let settled = false;
-    let unsubscribeLoaded = () => undefined;
-    let unsubscribeError = () => undefined;
+    let unsubscribeLoaded: () => void = () => {};
+    let unsubscribeError: () => void = () => {};
     const timeout = setTimeout(() => finish(false), 15000);
 
     const cleanup = () => {
@@ -80,9 +80,9 @@ export async function showRewardedAd(): Promise<boolean> {
   return new Promise(resolve => {
     let earned = false;
     let settled = false;
-    let unsubscribeEarned = () => undefined;
-    let unsubscribeClosed = () => undefined;
-    let unsubscribeError = () => undefined;
+    let unsubscribeEarned: () => void = () => {};
+    let unsubscribeClosed: () => void = () => {};
+    let unsubscribeError: () => void = () => {};
 
     const cleanup = () => {
       unsubscribeEarned();
