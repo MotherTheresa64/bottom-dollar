@@ -1,0 +1,56 @@
+name: Verify Android Production Build
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  verify:
+    if: contains(github.event.head_commit.message, '[verify-build]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Wait for production build
+        shell: bash
+        run: |
+          BUILD_ID="39a2dc84-8a68-4c7a-a1cc-8271f56ecc61"
+          for attempt in {1..40}; do
+            JSON="$(eas build:view "$BUILD_ID" --json --non-interactive)"
+            STATUS="$(printf '%s' "$JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).status))")"
+            echo "Production build status: $STATUS"
+            if [ "$STATUS" = "FINISHED" ]; then
+              printf '%s' "$JSON" > production-build.json
+              exit 0
+            fi
+            if [ "$STATUS" = "ERRORED" ] || [ "$STATUS" = "CANCELED" ]; then
+              printf '%s' "$JSON" > production-build.json
+              exit 1
+            fi
+            sleep 30
+          done
+          echo "Timed out waiting for EAS production build"
+          exit 1
+
+      - name: Upload build metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-build-metadata
+          path: production-build.json
+          if-no-files-found: ignore
