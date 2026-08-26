@@ -39,6 +39,9 @@
     },
     "updates": {
       "url": "https://u.expo.dev/36a764ef-3d4b-440f-b1ba-e7f2d3938881"
-    }
+    },
+    "plugins": [
+      "react-native-google-mobile-ads"
+    ]
   }
 }
