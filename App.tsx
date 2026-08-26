@@ -1,1 +1,1 @@
-export { default } from './src/BottomDollarApp';
+export { default } from './src/AppShell';
