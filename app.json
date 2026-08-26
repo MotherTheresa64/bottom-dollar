@@ -5,10 +5,19 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
+    "androidStatusBar": {
+      "hidden": true,
+      "barStyle": "light-content",
+      "backgroundColor": "#090b0d",
+      "translucent": true
+    },
     "androidNavigationBar": {
       "visible": "sticky-immersive",
       "barStyle": "light-content",
       "backgroundColor": "#090b0d"
+    },
+    "developmentClient": {
+      "silentLaunch": true
     },
     "android": {
       "package": "com.mt64labs.bottomdollar",
