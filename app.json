@@ -8,13 +8,13 @@
     "androidStatusBar": {
       "hidden": true,
       "barStyle": "light-content",
-      "backgroundColor": "#080a0c",
+      "backgroundColor": "#07090b",
       "translucent": true
     },
     "androidNavigationBar": {
       "visible": "sticky-immersive",
       "barStyle": "light-content",
-      "backgroundColor": "#080a0c",
+      "backgroundColor": "#07090b",
       "contrastEnforced": false
     },
     "developmentClient": {
@@ -32,7 +32,6 @@
     "extra": {
       "studio": "MT64 Labs",
       "admobRewardedAdUnitId": "ca-app-pub-2371910035366454/4232226723",
-      "admobUseLiveAds": true,
       "eas": {
         "projectId": "36a764ef-3d4b-440f-b1ba-e7f2d3938881"
       }
