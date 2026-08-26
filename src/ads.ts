@@ -1,4 +1,3 @@
-import Constants from 'expo-constants';
 import mobileAds, {
   AdEventType,
   RewardedAd,
@@ -6,10 +5,7 @@ import mobileAds, {
   TestIds
 } from 'react-native-google-mobile-ads';
 
-const productionRewardedId =
-  (Constants.expoConfig?.extra?.admobRewardedAdUnitId as string | undefined) ??
-  'ca-app-pub-2371910035366454/4232226723';
-
+const productionRewardedId = 'ca-app-pub-2371910035366454/4232226723';
 const useLiveAds = process.env.EXPO_PUBLIC_ADMOB_LIVE === 'true';
 const rewardedAdUnitId = useLiveAds ? productionRewardedId : TestIds.REWARDED;
 
@@ -40,6 +36,8 @@ async function loadRewardedAd(): Promise<boolean> {
   const ad = rewarded ?? createRewarded();
   loadPromise = new Promise<boolean>(resolve => {
     let settled = false;
+    let unsubscribeLoaded = () => undefined;
+    let unsubscribeError = () => undefined;
     const timeout = setTimeout(() => finish(false), 15000);
 
     const cleanup = () => {
@@ -56,8 +54,8 @@ async function loadRewardedAd(): Promise<boolean> {
       resolve(success);
     };
 
-    const unsubscribeLoaded = ad.addAdEventListener(RewardedAdEventType.LOADED, () => finish(true));
-    const unsubscribeError = ad.addAdEventListener(AdEventType.ERROR, () => finish(false));
+    unsubscribeLoaded = ad.addAdEventListener(RewardedAdEventType.LOADED, () => finish(true));
+    unsubscribeError = ad.addAdEventListener(AdEventType.ERROR, () => finish(false));
     ad.load();
   });
 
@@ -82,6 +80,9 @@ export async function showRewardedAd(): Promise<boolean> {
   return new Promise(resolve => {
     let earned = false;
     let settled = false;
+    let unsubscribeEarned = () => undefined;
+    let unsubscribeClosed = () => undefined;
+    let unsubscribeError = () => undefined;
 
     const cleanup = () => {
       unsubscribeEarned();
@@ -98,9 +99,9 @@ export async function showRewardedAd(): Promise<boolean> {
       resolve(value);
     };
 
-    const unsubscribeEarned = ad.addAdEventListener(RewardedAdEventType.EARNED_REWARD, () => { earned = true; });
-    const unsubscribeClosed = ad.addAdEventListener(AdEventType.CLOSED, () => finish(earned));
-    const unsubscribeError = ad.addAdEventListener(AdEventType.ERROR, () => finish(false));
+    unsubscribeEarned = ad.addAdEventListener(RewardedAdEventType.EARNED_REWARD, () => { earned = true; });
+    unsubscribeClosed = ad.addAdEventListener(AdEventType.CLOSED, () => finish(earned));
+    unsubscribeError = ad.addAdEventListener(AdEventType.ERROR, () => finish(false));
 
     loaded = false;
     ad.show().catch(() => finish(false));
