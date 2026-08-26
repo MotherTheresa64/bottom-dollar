@@ -5,6 +5,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: write
+
 jobs:
   verify:
     if: contains(github.event.head_commit.message, '[verify-build]')
@@ -27,6 +30,7 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Wait for production build
+        id: wait
         shell: bash
         run: |
           BUILD_ID="39a2dc84-8a68-4c7a-a1cc-8271f56ecc61"
@@ -34,18 +38,33 @@ jobs:
             JSON="$(eas build:view "$BUILD_ID" --json)"
             STATUS="$(printf '%s' "$JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).status))")"
             echo "Production build status: $STATUS"
+            printf '%s\n' "$JSON" > production-build.json
             if [ "$STATUS" = "FINISHED" ]; then
-              printf '%s' "$JSON" > production-build.json
               exit 0
             fi
             if [ "$STATUS" = "ERRORED" ] || [ "$STATUS" = "CANCELED" ]; then
-              printf '%s' "$JSON" > production-build.json
               exit 1
             fi
             sleep 30
           done
           echo "Timed out waiting for EAS production build"
           exit 1
+
+      - name: Persist build result
+        if: always()
+        shell: bash
+        run: |
+          if [ -f production-build.json ]; then
+            mkdir -p release
+            cp production-build.json release/production-build-status.json
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add release/production-build-status.json
+            if ! git diff --cached --quiet; then
+              git commit -m "Record production build status [skip ci]"
+              git push
+            fi
+          fi
 
       - name: Upload build metadata
         if: always()
