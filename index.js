@@ -1,4 +1,4 @@
 import { registerRootComponent } from 'expo';
-import BottomDollarAppFinal from './src/BottomDollarAppFinal';
+import AppShell from './src/AppShell';
 
-registerRootComponent(BottomDollarAppFinal);
+registerRootComponent(AppShell);
