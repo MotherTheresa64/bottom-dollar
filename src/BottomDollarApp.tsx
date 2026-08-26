@@ -30,6 +30,7 @@ import {
 } from './game/engine';
 import { EducationType, HousingType, LifeState } from './game/types';
 import { loadGame, saveGame } from './storage';
+import { preloadRewardedAd, rewardedAdUsesTestInventory, showRewardedAd } from './ads';
 
 type Page = 'home' | 'work' | 'life' | 'money' | 'empire';
 type RewardKind = 'restore' | 'double' | 'cash';
@@ -45,12 +46,14 @@ export default function BottomDollarApp() {
   const [ready, setReady] = useState(false);
   const [notice, setNotice] = useState('Start small. Every choice costs time.');
   const [page, setPage] = useState<Page>('home');
+  const [adBusy, setAdBusy] = useState(false);
 
   useEffect(() => {
     loadGame().then(saved => {
       if (saved) setState(normalizeState(saved));
       setReady(true);
     });
+    preloadRewardedAd().catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -107,16 +110,7 @@ export default function BottomDollarApp() {
     commit(next, `${hours}-hour ${title} shift complete${doubleReady ? ' · 2× boost used' : ''}.`, true);
   };
 
-  const grantReward = (kind: RewardKind) => {
-    if (rewardAdsLeft <= 0) {
-      setNotice('Rewarded boost limit reached for this in-game day.');
-      return;
-    }
-    if (!__DEV__) {
-      setNotice('Rewarded ads are awaiting the production AdMob connection.');
-      return;
-    }
-
+  const applyReward = (kind: RewardKind) => {
     const baseStats = {
       ...state.stats,
       rewardAdDay: day,
@@ -127,16 +121,36 @@ export default function BottomDollarApp() {
 
     if (kind === 'restore') {
       next = { ...next, energy: clamp(state.energy + 45), health: clamp(state.health + 12), happiness: clamp(state.happiness + 10) };
-      message = 'DEV rewarded ad: condition restored.';
+      message = 'Reward earned: condition restored.';
     } else if (kind === 'double') {
       next = { ...next, stats: { ...baseStats, doubleNextPay: 1 } };
-      message = 'DEV rewarded ad: your next active payout is doubled.';
+      message = 'Reward earned: your next active payout is doubled.';
     } else {
       const bonus = Math.max(25, Math.min(5000, Math.round(Math.max(50, Math.abs(netWorth) * 0.02))));
       next = { ...next, cash: state.cash + bonus, stats: { ...baseStats, earned: (state.stats.earned ?? 0) + bonus } };
-      message = `DEV rewarded ad: sponsor bonus +${money(bonus)}.`;
+      message = `Reward earned: sponsor bonus +${money(bonus)}.`;
     }
     commit(next, message, true);
+  };
+
+  const grantReward = async (kind: RewardKind) => {
+    if (rewardAdsLeft <= 0 || adBusy) {
+      if (rewardAdsLeft <= 0) setNotice('Rewarded boost limit reached for this in-game day.');
+      return;
+    }
+
+    setAdBusy(true);
+    setNotice('Loading rewarded ad...');
+    const earned = await showRewardedAd();
+    setAdBusy(false);
+
+    if (!earned) {
+      setNotice('Ad not ready or reward not completed. Try again in a moment.');
+      preloadRewardedAd().catch(() => undefined);
+      return;
+    }
+
+    applyReward(kind);
   };
 
   const spendBoostCredit = (kind: 'restore' | 'double') => {
@@ -297,14 +311,14 @@ export default function BottomDollarApp() {
           <View><Text style={styles.boostKicker}>REWARDED ADS</Text><Text style={styles.boostBig}>{rewardAdsLeft}/3 left today</Text></View>
           <View style={styles.boostRight}><Text style={styles.boostKicker}>BOOST CREDITS</Text><Text style={styles.boostBig}>{boostCredits}</Text></View>
         </View>
-        <BoostButton title="Recovery Boost" detail="Restore +45 energy, +12 health, +10 happiness." badge={__DEV__ ? 'DEV AD' : 'WATCH AD'} disabled={rewardAdsLeft <= 0} onPress={() => grantReward('restore')} />
-        <BoostButton title="2× Next Payout" detail="Double the next quick-money action or job payout." badge={doubleReady ? 'ACTIVE' : (__DEV__ ? 'DEV AD' : 'WATCH AD')} disabled={doubleReady || rewardAdsLeft <= 0} onPress={() => grantReward('double')} />
-        <BoostButton title="Sponsor Bonus" detail="Receive a small cash injection scaled to your progress." badge={__DEV__ ? 'DEV AD' : 'WATCH AD'} disabled={rewardAdsLeft <= 0} onPress={() => grantReward('cash')} />
+        <BoostButton title="Recovery Boost" detail="Restore +45 energy, +12 health, +10 happiness." badge={adBusy ? 'LOADING' : rewardedAdUsesTestInventory ? 'TEST AD' : 'WATCH AD'} disabled={adBusy || rewardAdsLeft <= 0} onPress={() => grantReward('restore')} />
+        <BoostButton title="2× Next Payout" detail="Double the next quick-money action or job payout." badge={doubleReady ? 'ACTIVE' : adBusy ? 'LOADING' : rewardedAdUsesTestInventory ? 'TEST AD' : 'WATCH AD'} disabled={doubleReady || adBusy || rewardAdsLeft <= 0} onPress={() => grantReward('double')} />
+        <BoostButton title="Sponsor Bonus" detail="Receive a small cash injection scaled to your progress." badge={adBusy ? 'LOADING' : rewardedAdUsesTestInventory ? 'TEST AD' : 'WATCH AD'} disabled={adBusy || rewardAdsLeft <= 0} onPress={() => grantReward('cash')} />
         <View style={styles.divider} />
         <BoostButton title="Use Boost Credit: Full Recovery" detail="Premium consumable. Restores energy and improves health/happiness." badge="1 CREDIT" disabled={boostCredits < 1} onPress={() => spendBoostCredit('restore')} />
         <BoostButton title="Use Boost Credit: 2× Payout" detail="Premium consumable. Doubles your next active payout." badge="1 CREDIT" disabled={boostCredits < 1 || doubleReady} onPress={() => spendBoostCredit('double')} />
         {__DEV__ ? <MiniButton label="DEV: add 5 Boost Credits" onPress={() => commit({ ...state, stats: { ...state.stats, boostCredits: boostCredits + 5 } }, 'Added 5 development Boost Credits.', true)} /> : null}
-        <View style={styles.storeNote}><Text style={styles.storeNoteTitle}>PLAY STORE PRODUCTS</Text><Text style={styles.storeNoteText}>Planned: 5 credits · $1.99, 15 credits · $4.99, 35 credits · $9.99. Real billing and rewarded video require native Google Play Billing + AdMob IDs before release.</Text></View>
+        <View style={styles.storeNote}><Text style={styles.storeNoteTitle}>MONETIZATION</Text><Text style={styles.storeNoteText}>Rewarded video is wired through AdMob. Development builds use Google test inventory; release builds use the live Bottom Dollar rewarded unit. Paid Boost Credits will be connected through Google Play Billing before launch.</Text></View>
       </Section>
 
       <Section title="BUSINESSES" subtitle="Launch, automate, and scale">
@@ -340,7 +354,7 @@ export default function BottomDollarApp() {
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           {pageContent}
-          <Text style={styles.build}>BOTTOM DOLLAR · PRE-RELEASE BUILD 0.6</Text>
+          <Text style={styles.build}>BOTTOM DOLLAR · PRE-RELEASE BUILD 0.7</Text>
         </ScrollView>
 
         <View style={styles.nav}>
@@ -376,22 +390,20 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: 16, paddingTop: 18, paddingBottom: 120, gap: 20 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 }, headerCopy: { flex: 1, minWidth: 0 }, brand: { color: '#f7f8f9', fontSize: 23, fontWeight: '900', letterSpacing: 1.4 }, subBrand: { color: '#737d84', marginTop: 1, fontSize: 10 },
   dateBadge: { backgroundColor: '#111518', borderWidth: 1, borderColor: '#283036', borderRadius: 12, paddingHorizontal: 11, paddingVertical: 8, alignItems: 'flex-end' }, dateMain: { color: '#e5eaec', fontSize: 10, fontWeight: '900' }, dateSub: { color: '#778187', fontSize: 8, fontWeight: '800', marginTop: 2 },
-  vitalsHud: { flexDirection: 'row', gap: 8, alignItems: 'center', backgroundColor: '#101416', borderWidth: 1, borderColor: '#232b30', borderRadius: 14, padding: 10 }, cashHud: { width: 86, justifyContent: 'center', borderRightWidth: 1, borderRightColor: '#293136', paddingRight: 8 }, cashHudValue: { color: '#f5f7f8', fontSize: 14, fontWeight: '900', marginTop: 3 }, hudVital: { flex: 1, minWidth: 0 }, hudLabel: { color: '#727c83', fontSize: 8, fontWeight: '900', letterSpacing: 0.5 }, hudValue: { color: '#b7c0c5', fontSize: 9, fontWeight: '900' }, hudDanger: { color: '#ff9877' }, hudTrack: { height: 4, backgroundColor: '#272d31', borderRadius: 99, overflow: 'hidden', marginTop: 4 }, hudFill: { height: '100%', borderRadius: 99 }, fill_energy: { backgroundColor: '#d6ff45' }, fill_health: { backgroundColor: '#73e7a2' }, fill_happy: { backgroundColor: '#7cb5ff' }, hudBoost: { backgroundColor: '#d6ff45', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 5 }, hudBoostText: { color: '#11150d', fontSize: 9, fontWeight: '900' },
-  hero: { backgroundColor: '#121619', borderRadius: 22, padding: 20, borderWidth: 1, borderColor: '#283036' }, eyebrow: { color: '#879198', fontSize: 11, fontWeight: '900', letterSpacing: 1.5 }, netWorth: { color: '#f8fafb', fontSize: 44, fontWeight: '900', marginTop: 10, marginBottom: 20, letterSpacing: -1 },
-  statRow: { flexDirection: 'row', gap: 10 }, stat: { flex: 1, minWidth: 0 }, statLabel: { color: '#778188', fontSize: 10, fontWeight: '700' }, statValue: { color: '#dfe4e6', fontWeight: '800', fontSize: 14, marginTop: 4 }, rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
-  pill: { color: '#d6ff45', backgroundColor: '#283315', overflow: 'hidden', borderRadius: 99, paddingHorizontal: 9, paddingVertical: 4, fontSize: 9, fontWeight: '900' }, pillDanger: { color: '#ff9999', backgroundColor: '#351a1c' },
-  notice: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#101416', borderRadius: 13, padding: 14, borderWidth: 1, borderColor: '#20282c' }, noticeDot: { width: 7, height: 7, borderRadius: 99, backgroundColor: '#d6ff45' }, noticeText: { color: '#b6bec3', fontSize: 12, flex: 1, lineHeight: 18 },
-  pageIntro: { marginTop: 1 }, pageTitle: { color: '#f6f8f9', fontSize: 28, fontWeight: '900', letterSpacing: 1.1 }, pageSubtitle: { color: '#7a848b', fontSize: 12, marginTop: 5, lineHeight: 18 }, section: { gap: 10 }, sectionHeading: { marginLeft: 2, marginBottom: 2 }, sectionTitle: { color: '#98a1a7', fontSize: 12, fontWeight: '900', letterSpacing: 1.6 }, sectionSubtitle: { color: '#687178', fontSize: 10, marginTop: 3 },
-  lifeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 }, lifeCard: { width: '48.5%', minHeight: 72, backgroundColor: '#121619', borderColor: '#273036', borderWidth: 1, borderRadius: 15, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }, lifeIcon: { color: '#d6ff45', fontSize: 17, width: 20, textAlign: 'center' }, lifeLabel: { color: '#758087', fontSize: 9, fontWeight: '800', textTransform: 'uppercase' }, lifeValue: { color: '#e1e5e7', fontSize: 12, fontWeight: '800', marginTop: 4 },
-  rulesCard: { backgroundColor: '#111518', borderWidth: 1, borderColor: '#30383d', borderRadius: 16, padding: 16 }, rulesTitle: { color: '#d6ff45', fontSize: 10, fontWeight: '900', letterSpacing: 1.2 }, rulesText: { color: '#99a2a8', fontSize: 11, lineHeight: 18, marginTop: 7 },
-  milestone: { backgroundColor: '#d6ff45', borderRadius: 20, padding: 19 }, milestoneLabel: { color: '#161a12', fontSize: 10, fontWeight: '900' }, milestonePct: { color: '#33400b', fontSize: 12, fontWeight: '900' }, milestoneText: { color: '#161a12', fontWeight: '900', fontSize: 18, marginTop: 7 }, trackDark: { backgroundColor: '#accf34', height: 7, borderRadius: 99, overflow: 'hidden', marginTop: 15 }, fillDark: { backgroundColor: '#161a12', height: '100%', borderRadius: 99 },
-  button: { backgroundColor: '#14191c', borderRadius: 16, borderWidth: 1, borderColor: '#2b3439', padding: 15 }, buttonDisabled: { opacity: 0.68, backgroundColor: '#101416' }, buttonTitle: { color: '#f1f4f5', fontWeight: '800', fontSize: 15, flex: 1 }, buttonBadge: { color: '#d6ff45', backgroundColor: '#273113', overflow: 'hidden', borderRadius: 99, paddingHorizontal: 9, paddingVertical: 4, fontSize: 9, fontWeight: '900' }, badgeDisabled: { color: '#929ba0', backgroundColor: '#262c30' }, buttonDetail: { color: '#939ca2', fontSize: 11.5, marginTop: 6, lineHeight: 17 }, textDisabled: { color: '#7e878d' }, disabledReason: { color: '#d39a7e', fontSize: 10, fontWeight: '700', marginTop: 6 },
-  activeBoost: { backgroundColor: '#222b12', borderWidth: 1, borderColor: '#4b6221', borderRadius: 12, padding: 11 }, activeBoostText: { color: '#d6ff45', fontSize: 10, fontWeight: '900', textAlign: 'center', letterSpacing: 0.8 },
-  financeSummary: { flexDirection: 'row', backgroundColor: '#121619', borderRadius: 16, borderWidth: 1, borderColor: '#283036', padding: 15, gap: 8 }, financeCard: { backgroundColor: '#121619', borderRadius: 16, padding: 15, borderWidth: 1, borderColor: '#283036' }, financeLabel: { color: '#7c878e', fontSize: 9, fontWeight: '900' }, financeValue: { color: '#f3f6f7', fontSize: 24, fontWeight: '900', marginTop: 4 }, financeSub: { color: '#7a858c', fontSize: 10, lineHeight: 15, marginTop: 5 }, quickRow: { flexDirection: 'row', gap: 8 }, miniButton: { flex: 1, backgroundColor: '#151b1f', borderWidth: 1, borderColor: '#2c353a', borderRadius: 11, paddingVertical: 12, paddingHorizontal: 8 }, miniText: { color: '#dfe4e6', fontSize: 10, fontWeight: '800', textAlign: 'center' },
-  passiveHero: { backgroundColor: '#172014', borderWidth: 1, borderColor: '#344321', borderRadius: 19, padding: 18 }, passiveLabel: { color: '#a8c165', fontSize: 10, fontWeight: '900', letterSpacing: 1.2 }, passiveValue: { color: '#d6ff45', fontSize: 32, fontWeight: '900', marginTop: 5 }, passiveSub: { color: '#89985f', fontSize: 10, marginTop: 6 },
-  boostSummary: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#121619', borderWidth: 1, borderColor: '#2a3338', borderRadius: 15, padding: 14 }, boostKicker: { color: '#7c868c', fontSize: 8, fontWeight: '900', letterSpacing: 0.8 }, boostBig: { color: '#e4e9eb', fontSize: 17, fontWeight: '900', marginTop: 4 }, boostRight: { alignItems: 'flex-end' }, divider: { height: 1, backgroundColor: '#242c30', marginVertical: 2 }, storeNote: { backgroundColor: '#101416', borderWidth: 1, borderColor: '#2a3237', borderRadius: 13, padding: 13 }, storeNoteTitle: { color: '#9aa3a8', fontSize: 9, fontWeight: '900', letterSpacing: 0.8 }, storeNoteText: { color: '#7d878d', fontSize: 10, lineHeight: 16, marginTop: 5 },
-  achievementGrid: { gap: 8 }, achievement: { backgroundColor: '#101416', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#242b2f' }, achievementUnlocked: { borderColor: '#3b4f20', backgroundColor: '#141b11' }, achievementName: { color: '#d6ff45', fontWeight: '900', fontSize: 12 }, achievementDesc: { color: '#778188', fontSize: 10, marginTop: 4, lineHeight: 15 },
-  nav: { flexDirection: 'row', backgroundColor: '#0d1113', borderTopWidth: 1, borderTopColor: '#232a2f', paddingTop: 8, paddingBottom: 14, paddingHorizontal: 4 }, navItem: { flex: 1, alignItems: 'center', minHeight: 52, justifyContent: 'center' }, navIcon: { color: '#626c72', fontSize: 16, fontWeight: '900' }, navLabel: { color: '#626c72', fontSize: 8, fontWeight: '900', marginTop: 3, letterSpacing: 0.5 }, navActive: { color: '#d6ff45' }, navDot: { width: 4, height: 4, borderRadius: 99, backgroundColor: '#d6ff45', marginTop: 4 },
-  build: { color: '#4b5459', textAlign: 'center', fontSize: 9, fontWeight: '800', letterSpacing: 1.2, marginTop: 4 }, muted: { color: '#788289', fontSize: 11, marginTop: 12 },
-  deathScreen: { flex: 1, justifyContent: 'center', padding: 28 }, deathKicker: { color: '#ff8e8e', fontSize: 11, fontWeight: '900', letterSpacing: 1.8 }, deathTitle: { color: '#f8f9f9', fontSize: 34, fontWeight: '900', marginTop: 8 }, deathReason: { color: '#98a1a7', fontSize: 14, lineHeight: 21, marginTop: 10 }, primaryButton: { backgroundColor: '#d6ff45', borderRadius: 14, paddingVertical: 15, alignItems: 'center', marginTop: 24 }, primaryButtonText: { color: '#141810', fontSize: 13, fontWeight: '900', letterSpacing: 0.8 }
+  vitalsHud: { flexDirection: 'row', gap: 8, alignItems: 'center', backgroundColor: '#101416', borderWidth: 1, borderColor: '#232b30', borderRadius: 14, padding: 10 }, cashHud: { width: 86, justifyContent: 'center', borderRightWidth: 1, borderRightColor: '#293136', paddingRight: 8 }, cashHudValue: { color: '#f5f7f8', fontSize: 14, fontWeight: '900', marginTop: 3 }, hudVital: { flex: 1, minWidth: 0 }, hudLabel: { color: '#748087', fontSize: 8, fontWeight: '900', letterSpacing: 0.5 }, hudValue: { color: '#b6bfc4', fontSize: 9, fontWeight: '900' }, hudDanger: { color: '#ff9b79' }, hudTrack: { height: 4, backgroundColor: '#242b2f', borderRadius: 99, overflow: 'hidden', marginTop: 4 }, hudFill: { height: '100%', borderRadius: 99 }, fill_energy: { backgroundColor: '#d7ff45' }, fill_health: { backgroundColor: '#74e4a3' }, fill_happy: { backgroundColor: '#82b8ff' }, hudBoost: { backgroundColor: '#d7ff45', borderRadius: 9, paddingHorizontal: 7, paddingVertical: 7 }, hudBoostText: { color: '#15190f', fontSize: 9, fontWeight: '900' },
+  hero: { backgroundColor: '#12171a', borderRadius: 22, padding: 20, borderWidth: 1, borderColor: '#252d32' }, eyebrow: { color: '#869198', fontSize: 11, fontWeight: '900', letterSpacing: 1.5 }, pill: { color: '#d7ff45', backgroundColor: '#263112', overflow: 'hidden', borderRadius: 99, paddingHorizontal: 9, paddingVertical: 4, fontSize: 9, fontWeight: '900' }, pillDanger: { color: '#ff9999', backgroundColor: '#35181a' }, netWorth: { color: '#f7f9fa', fontSize: 44, fontWeight: '900', marginTop: 9, marginBottom: 20, letterSpacing: -1 },
+  statRow: { flexDirection: 'row', gap: 10 }, stat: { flex: 1, minWidth: 0 }, statLabel: { color: '#727e85', fontSize: 10, fontWeight: '700' }, statValue: { color: '#dde3e6', fontSize: 14, fontWeight: '800', marginTop: 4 }, rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  notice: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#101416', borderRadius: 13, padding: 14, borderWidth: 1, borderColor: '#20272b' }, noticeDot: { width: 7, height: 7, borderRadius: 99, backgroundColor: '#d7ff45' }, noticeText: { color: '#b1bac0', fontSize: 12, flex: 1, lineHeight: 17 },
+  pageIntro: { marginTop: 2 }, pageTitle: { color: '#f6f8f9', fontSize: 28, fontWeight: '900', letterSpacing: 1.2 }, pageSubtitle: { color: '#737d84', fontSize: 12, marginTop: 4, lineHeight: 18 }, section: { gap: 10 }, sectionHeading: { marginLeft: 2, marginBottom: 2 }, sectionTitle: { color: '#8d989f', fontSize: 12, fontWeight: '900', letterSpacing: 1.6 }, sectionSubtitle: { color: '#5f6970', fontSize: 10, marginTop: 3 },
+  lifeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 }, lifeCard: { width: '48.5%', minHeight: 72, backgroundColor: '#12171a', borderColor: '#252d32', borderWidth: 1, borderRadius: 15, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }, lifeIcon: { color: '#d7ff45', fontSize: 17, width: 20, textAlign: 'center' }, lifeLabel: { color: '#6e797f', fontSize: 9, fontWeight: '800', textTransform: 'uppercase' }, lifeValue: { color: '#dde2e5', fontSize: 12, fontWeight: '800', marginTop: 4 },
+  rulesCard: { backgroundColor: '#111518', borderWidth: 1, borderColor: '#30373b', borderRadius: 16, padding: 16 }, rulesTitle: { color: '#d7ff45', fontSize: 10, fontWeight: '900', letterSpacing: 1.2 }, rulesText: { color: '#909aa0', fontSize: 11, lineHeight: 17, marginTop: 7 },
+  milestone: { backgroundColor: '#d7ff45', borderRadius: 20, padding: 19 }, milestoneLabel: { color: '#171b12', fontSize: 10, fontWeight: '900' }, milestonePct: { color: '#35400e', fontSize: 12, fontWeight: '900' }, milestoneText: { color: '#171b12', fontSize: 18, fontWeight: '900', marginTop: 7 }, trackDark: { backgroundColor: '#abc933', height: 7, borderRadius: 99, overflow: 'hidden', marginTop: 15 }, fillDark: { backgroundColor: '#151a11', height: '100%', borderRadius: 99 },
+  activeBoost: { backgroundColor: '#1b2511', borderColor: '#3f5222', borderWidth: 1, borderRadius: 12, padding: 11 }, activeBoostText: { color: '#d7ff45', fontSize: 10, fontWeight: '900', textAlign: 'center', letterSpacing: 0.8 },
+  button: { backgroundColor: '#14191c', borderRadius: 15, borderWidth: 1, borderColor: '#2a3338', padding: 15 }, buttonDisabled: { opacity: 0.62, backgroundColor: '#101417' }, buttonTitle: { color: '#f1f4f5', fontWeight: '800', fontSize: 15, flex: 1 }, buttonBadge: { color: '#d7ff45', backgroundColor: '#273111', overflow: 'hidden', borderRadius: 99, paddingHorizontal: 9, paddingVertical: 4, fontSize: 9, fontWeight: '900' }, badgeDisabled: { color: '#8b9499', backgroundColor: '#252a2d' }, buttonDetail: { color: '#899399', fontSize: 11.5, marginTop: 6, lineHeight: 17 }, textDisabled: { color: '#7b858b' }, disabledReason: { color: '#d49b7e', fontSize: 10, fontWeight: '700', marginTop: 6 },
+  financeSummary: { flexDirection: 'row', backgroundColor: '#12171a', borderRadius: 16, borderWidth: 1, borderColor: '#252d32', padding: 15, gap: 8 }, financeCard: { backgroundColor: '#12171a', borderRadius: 15, padding: 15, borderWidth: 1, borderColor: '#252d32' }, financeLabel: { color: '#77838a', fontSize: 9, fontWeight: '900' }, financeValue: { color: '#f3f6f7', fontSize: 24, fontWeight: '900', marginTop: 4 }, financeSub: { color: '#737e84', fontSize: 10, lineHeight: 15, marginTop: 5 }, quickRow: { flexDirection: 'row', gap: 8 }, miniButton: { flex: 1, backgroundColor: '#151b1f', borderWidth: 1, borderColor: '#2b353a', borderRadius: 11, paddingVertical: 11, paddingHorizontal: 8 }, miniText: { color: '#dce2e5', fontSize: 10, fontWeight: '800', textAlign: 'center' },
+  passiveHero: { backgroundColor: '#172014', borderWidth: 1, borderColor: '#32411f', borderRadius: 18, padding: 18 }, passiveLabel: { color: '#a8bd64', fontSize: 10, fontWeight: '900', letterSpacing: 1.2 }, passiveValue: { color: '#d7ff45', fontSize: 32, fontWeight: '900', marginTop: 5 }, passiveSub: { color: '#84925f', fontSize: 10, marginTop: 6 },
+  boostSummary: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#111619', borderWidth: 1, borderColor: '#2a3236', borderRadius: 14, padding: 14 }, boostKicker: { color: '#78838a', fontSize: 9, fontWeight: '900' }, boostBig: { color: '#eef2f3', fontSize: 15, fontWeight: '900', marginTop: 4 }, boostRight: { alignItems: 'flex-end' }, divider: { height: 1, backgroundColor: '#232b30', marginVertical: 2 }, storeNote: { backgroundColor: '#0e1214', borderWidth: 1, borderColor: '#242c31', borderRadius: 13, padding: 13 }, storeNoteTitle: { color: '#d7ff45', fontSize: 9, fontWeight: '900', letterSpacing: 0.9 }, storeNoteText: { color: '#778188', fontSize: 10, lineHeight: 15, marginTop: 5 },
+  achievementGrid: { gap: 8 }, achievement: { backgroundColor: '#101416', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#21292d' }, achievementUnlocked: { borderColor: '#3c5021', backgroundColor: '#131a10' }, achievementName: { color: '#d7ff45', fontWeight: '900', fontSize: 12 }, achievementDesc: { color: '#737e84', fontSize: 10, marginTop: 4, lineHeight: 15 },
+  nav: { flexDirection: 'row', backgroundColor: '#0d1113', borderTopWidth: 1, borderTopColor: '#20272b', paddingTop: 9, paddingBottom: 22, paddingHorizontal: 5 }, navItem: { flex: 1, alignItems: 'center', minHeight: 50, justifyContent: 'center' }, navIcon: { color: '#5e676d', fontSize: 16, fontWeight: '900' }, navLabel: { color: '#5e676d', fontSize: 8, fontWeight: '900', marginTop: 3, letterSpacing: 0.6 }, navActive: { color: '#d7ff45' }, navDot: { width: 4, height: 4, borderRadius: 99, backgroundColor: '#d7ff45', marginTop: 4 }, build: { color: '#485157', textAlign: 'center', fontSize: 9, fontWeight: '800', letterSpacing: 1.1, marginTop: 2 },
+  deathScreen: { flex: 1, justifyContent: 'center', padding: 28 }, deathKicker: { color: '#ff9191', fontSize: 11, fontWeight: '900', letterSpacing: 1.8 }, deathTitle: { color: '#f7f9fa', fontSize: 34, fontWeight: '900', marginTop: 8 }, deathReason: { color: '#929ca2', fontSize: 14, lineHeight: 21, marginTop: 10 }, muted: { color: '#727c82', fontSize: 11, marginTop: 12 }, primaryButton: { backgroundColor: '#d7ff45', borderRadius: 14, paddingVertical: 15, alignItems: 'center', marginTop: 24 }, primaryButtonText: { color: '#141810', fontSize: 13, fontWeight: '900', letterSpacing: 0.8 }
 });
