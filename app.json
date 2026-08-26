@@ -30,6 +30,7 @@
     "extra": {
       "studio": "MT64 Labs",
       "admobRewardedAdUnitId": "ca-app-pub-2371910035366454/4232226723",
+      "admobUseLiveAds": false,
       "eas": {
         "projectId": "36a764ef-3d4b-440f-b1ba-e7f2d3938881"
       }
