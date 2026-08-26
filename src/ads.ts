@@ -10,10 +10,7 @@ const productionRewardedId =
   (Constants.expoConfig?.extra?.admobRewardedAdUnitId as string | undefined) ??
   'ca-app-pub-2371910035366454/4232226723';
 
-// EAS Updates are production JS bundles even when they run inside a development
-// client, so __DEV__ is not a reliable way to choose test inventory here.
-// Keep live ads explicitly opt-in until we're ready for Play Store release.
-const useLiveAds = Constants.expoConfig?.extra?.admobUseLiveAds === true;
+const useLiveAds = process.env.EXPO_PUBLIC_ADMOB_LIVE === 'true';
 const rewardedAdUnitId = useLiveAds ? productionRewardedId : TestIds.REWARDED;
 
 let initialized = false;
@@ -28,28 +25,28 @@ async function ensureInitialized() {
 }
 
 function createRewarded() {
-  rewarded = RewardedAd.createForAdRequest(rewardedAdUnitId);
+  rewarded = RewardedAd.createForAdRequest(rewardedAdUnitId, {
+    requestNonPersonalizedAdsOnly: false
+  });
   loaded = false;
   return rewarded;
 }
 
 async function loadRewardedAd(): Promise<boolean> {
   await ensureInitialized();
-
   if (loaded && rewarded) return true;
   if (loadPromise) return loadPromise;
 
   const ad = rewarded ?? createRewarded();
-
   loadPromise = new Promise<boolean>(resolve => {
     let settled = false;
+    const timeout = setTimeout(() => finish(false), 15000);
 
     const cleanup = () => {
       clearTimeout(timeout);
       unsubscribeLoaded();
       unsubscribeError();
     };
-
     const finish = (success: boolean) => {
       if (settled) return;
       settled = true;
@@ -59,17 +56,8 @@ async function loadRewardedAd(): Promise<boolean> {
       resolve(success);
     };
 
-    const unsubscribeLoaded = ad.addAdEventListener(
-      RewardedAdEventType.LOADED,
-      () => finish(true)
-    );
-
-    const unsubscribeError = ad.addAdEventListener(
-      AdEventType.ERROR,
-      () => finish(false)
-    );
-
-    const timeout = setTimeout(() => finish(false), 12000);
+    const unsubscribeLoaded = ad.addAdEventListener(RewardedAdEventType.LOADED, () => finish(true));
+    const unsubscribeError = ad.addAdEventListener(AdEventType.ERROR, () => finish(false));
     ad.load();
   });
 
@@ -87,11 +75,10 @@ export function isRewardedAdReady() {
 }
 
 export async function showRewardedAd(): Promise<boolean> {
-  const isReady = await loadRewardedAd();
-  if (!isReady || !rewarded) return false;
+  const ready = await loadRewardedAd();
+  if (!ready || !rewarded) return false;
 
   const ad = rewarded;
-
   return new Promise(resolve => {
     let earned = false;
     let settled = false;
@@ -101,7 +88,6 @@ export async function showRewardedAd(): Promise<boolean> {
       unsubscribeClosed();
       unsubscribeError();
     };
-
     const finish = (value: boolean) => {
       if (settled) return;
       settled = true;
@@ -112,22 +98,9 @@ export async function showRewardedAd(): Promise<boolean> {
       resolve(value);
     };
 
-    const unsubscribeEarned = ad.addAdEventListener(
-      RewardedAdEventType.EARNED_REWARD,
-      () => {
-        earned = true;
-      }
-    );
-
-    const unsubscribeClosed = ad.addAdEventListener(
-      AdEventType.CLOSED,
-      () => finish(earned)
-    );
-
-    const unsubscribeError = ad.addAdEventListener(
-      AdEventType.ERROR,
-      () => finish(false)
-    );
+    const unsubscribeEarned = ad.addAdEventListener(RewardedAdEventType.EARNED_REWARD, () => { earned = true; });
+    const unsubscribeClosed = ad.addAdEventListener(AdEventType.CLOSED, () => finish(earned));
+    const unsubscribeError = ad.addAdEventListener(AdEventType.ERROR, () => finish(false));
 
     loaded = false;
     ad.show().catch(() => finish(false));
